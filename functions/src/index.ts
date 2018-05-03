@@ -1,33 +1,124 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as _ from 'lodash';
+import { create } from 'domain';
+
 admin.initializeApp();
-export const inviteToConversation = functions.database
-    .ref(`conversation/{key}/members/{index}`)
-    .onCreate(async (snapshot, context) => {
-        let { uid, phone } = snapshot.val();
-        if (!uid) {
-            uid = phone;
-        }
-        return admin
-            .database()
-            .ref(`user/${uid}/conversation/${context.params.key}`)
-            .update({
-                createdAt: admin.database.ServerValue.TIMESTAMP
-            });
-    });
+// // Start writing Firebase Functions
+// // https://firebase.google.com/docs/functions/typescript
+//
+// export const helloWorld = functions.https.onRequest((request, response) => {
+//  response.send("Hello from Firebase!");
+// });
+export const inviteToConversation = functions.database.ref(`conversation/{key}/members/{index}`).onCreate((snapshot, context) => {
+    let { uid, phoneNumber } = snapshot.val();
+    if (!uid) {
+        uid = phoneNumber;
+    }
+    return admin
+        .database()
+        .ref(`user/${uid}/conversation/${context.params.key}`)
+        .update({
+            createdAt: admin.database.ServerValue.TIMESTAMP
+        });
+});
 
 export const signUp = functions.auth.user().onCreate(async (user, context) => {
-    if (user.phoneNumber) {
-        let record = await admin
-            .database()
-            .ref(`user/${user.phoneNumber}/conversation`)
-            .once('value');
-        let wall = await admin
-            .database()
-            .ref(`user/${user.uid}/conversation`)
-            .update(record);
-        let fire = admin.firestore().collection('');
+    return await admin
+        .firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({
+            uid: user.uid,
+            phoneNumber: user.phoneNumber,
+            displayName: user.displayName,
+            photoURL: user.photoURL
+        });
+});
+const normalizePhoneNumber = phoneNumber => {
+    let fixed = (phoneNumber || '').replace(/[-\(\)\s]/g, '');
+    if (fixed.indexOf('+') == 0) {
+        return fixed;
     }
-    return 0;
+    if (fixed.length == 8) {
+        return '+976' + fixed;
+    }
+    return '+1' + fixed;
+};
+export const friendRequest = functions.database.ref(`user/{uid}/friend/requests/{key}`).onCreate(async (snapshot, context) => {
+    let key = _.property('params.key')(context);
+    let phoneNumber = snapshot.val().phoneNumber;
+    let from = snapshot.val().from;
+    let friends = await admin
+        .firestore()
+        .collection('users')
+        .where('phoneNumber', '==', normalizePhoneNumber(phoneNumber))
+        .get();
+
+    console.log(snapshot.val(), normalizePhoneNumber(phoneNumber));
+    return Promise.all(
+        friends.docs.map(async friend => {
+            return admin
+                .database()
+                .ref(`user/${friend.data().uid}/notification/`)
+                .push({
+                    key,
+                    type: 'friend-request',
+                    from,
+                    createdAt: admin.database.ServerValue.TIMESTAMP
+                });
+        })
+    );
+});
+const findUserByUID = async uid => {
+    let friends = await admin
+        .firestore()
+        .collection('users')
+        .where('uid', '==', uid)
+        .get();
+    let found = friends.docs.shift();
+    return found && found.data();
+};
+const createConversationBetweenFriends = async members => {
+    let conversationKey = await admin
+        .database()
+        .ref('conversation')
+        .push({
+            createdAt: admin.database.ServerValue.TIMESTAMP,
+            members
+        }).key;
+    return conversationKey;
+};
+
+const registerFriends = async (myUID, friend, conversationKey) => {
+    return await admin
+        .database()
+        .ref(`user/${myUID}/friend/list/${friend.uid}`)
+        .set({
+            ...friend,
+            conversationKey,
+            createdAt: admin.database.ServerValue.TIMESTAMP
+        });
+};
+export const friendRequestAccepted = functions.database.ref(`user/{uid}/notification/{key}/accepted`).onUpdate(async (snapshot, context) => {
+    let key = _.property('params.key')(context);
+    let myUID: any = _.property('params.uid')(context);
+    let dataSnapShot = await admin
+        .database()
+        .ref(`user/${myUID}/notification/${key}`)
+        .once('value');
+    let friendUID: any = _.property('from.uid')(dataSnapShot.val());
+
+    console.log(myUID, friendUID, `user/${myUID}/notification/${key}`);
+    if (!friendUID) {
+        return false;
+    }
+    let members = {};
+    members[myUID] = await findUserByUID(myUID);
+    members[friendUID] = await findUserByUID(friendUID);
+    console.log(members);
+    let conversationKey = await createConversationBetweenFriends(members);
+    await registerFriends(myUID, members[friendUID], conversationKey);
+    await registerFriends(friendUID, members[myUID], conversationKey);
+    return true;
 });
