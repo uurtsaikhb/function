@@ -87,6 +87,15 @@ const createConversationBetweenFriends = async members => {
             createdAt: admin.database.ServerValue.TIMESTAMP,
             members
         }).key;
+    await admin
+        .database()
+        .ref(`history/${conversationKey}`)
+        .push({
+            createdAt: admin.database.ServerValue.TIMESTAMP,
+            content: 'Become friends',
+            from: { uid: 'system' },
+            type: 'text'
+        });
     return conversationKey;
 };
 
@@ -100,7 +109,7 @@ const registerFriends = async (myUID, friend, conversationKey) => {
             createdAt: admin.database.ServerValue.TIMESTAMP
         });
 };
-export const friendRequestAccepted = functions.database.ref(`user/{uid}/notification/{key}/accepted`).onUpdate(async (snapshot, context) => {
+export const friendRequestAccepted = functions.database.ref(`user/{uid}/notification/{key}/accepted`).onCreate(async (snapshot, context) => {
     let key = _.property('params.key')(context);
     let myUID: any = _.property('params.uid')(context);
     let dataSnapShot = await admin
