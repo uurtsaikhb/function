@@ -154,7 +154,7 @@ export const sendFCM = functions.database
         const conversationId = context.params.conversationId;
         const messageId = context.params.messageId;
         let { content, from } = snapshot.val();
-        let { name } = from;
+        let { name, phoneNumber } = from;
 
         // console.log('CONVERSATION ID', conversationId);
 
@@ -190,8 +190,8 @@ export const sendFCM = functions.database
 
         const payload = {
             notification: {
-                title: name,
-                body: content
+                title: name || phoneNumber,
+                body: content || 'GeChat'
             }
         };
         return sendMessage(tokens, payload);
