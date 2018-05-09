@@ -4,11 +4,7 @@ import * as _ from 'lodash';
 import { create } from 'domain';
 
 // admin.initializeApp();
-var options = require('../options.json');
-admin.initializeApp({
-    credential: admin.credential.cert(options),
-    databaseURL: 'https://ge-chat-fd58e.firebaseio.com'
-});
+admin.initializeApp();
 // // Start writing Firebase Functions
 // // https://firebase.google.com/docs/functions/typescript
 //
@@ -120,9 +116,12 @@ const registerFriends = async (myUID, friend, conversationKey) => {
 };
 export const friendRequestAccepted = functions.database
     .ref(`user/{uid}/notification/{key}/accepted`)
-    .onUpdate(async (snapshot, context) => {
+    .onCreate(async (snapshot, context) => {
         let key = _.property('params.key')(context);
         let myUID: any = _.property('params.uid')(context);
+        if (!snapshot.val()) {
+            return -1;
+        }
         let dataSnapShot = await admin
             .database()
             .ref(`user/${myUID}/notification/${key}`)
@@ -149,49 +148,51 @@ const sendMessage = (tokens, payload) => {
 };
 // TEST
 // sendFCM('foo', {params: {conversationId: '-LBOF7ydAkKSI-BLGG6w'}})
-export const sendFCM = functions.database.ref(`history/{conversationId}`).onCreate(async (snapshot, context) => {
-    const conversationId = context.params.conversationId;
-    const messageId = context.params.messageId;
-    let { content, from } = snapshot.val();
-    let { name } = from;
+export const sendFCM = functions.database
+    .ref(`history/{conversationId}/{messageId}`)
+    .onCreate(async (snapshot, context) => {
+        const conversationId = context.params.conversationId;
+        const messageId = context.params.messageId;
+        let { content, from } = snapshot.val();
+        let { name } = from;
 
-    // console.log('CONVERSATION ID', conversationId);
+        // console.log('CONVERSATION ID', conversationId);
 
-    // Get conversation member ids.
-    let memberIds = await admin
-        .database()
-        .ref(`/conversation/${conversationId}/members`)
-        .once('value');
-    // console.log('MEMBERS', _.keys(memberIds.val()));
+        // Get conversation member ids.
+        let memberIds = await admin
+            .database()
+            .ref(`/conversation/${conversationId}/members`)
+            .once('value');
+        // console.log('MEMBERS', _.keys(memberIds.val()));
 
-    //deviceInfo objects
-    let infos = await Promise.all(
-        _.chain(memberIds.val())
-            .keys()
-            .flatten()
-            .map(async memberId => {
-                let snapshot = await admin
-                    .database()
-                    .ref(`deviceInfo/${memberId}`)
-                    .once('value');
+        //deviceInfo objects
+        let infos = await Promise.all(
+            _.chain(memberIds.val())
+                .keys()
+                .flatten()
+                .map(async memberId => {
+                    let snapshot = await admin
+                        .database()
+                        .ref(`deviceInfo/${memberId}`)
+                        .once('value');
 
-                return snapshot.val();
+                    return snapshot.val();
+                })
+                .value()
+        );
+
+        //get all device tokens
+        let tokens = infos
+            .map(info => {
+                return _.property('deviceId')(info);
             })
-            .value()
-    );
+            .filter(info => info);
 
-    //get all device tokens
-    let tokens = infos
-        .map(info => {
-            return _.property('deviceId')(info);
-        })
-        .filter(info => info);
-
-    const payload = {
-        notification: {
-            title: name,
-            body: content
-        }
-    };
-    return sendMessage(tokens, payload);
-});
+        const payload = {
+            notification: {
+                title: name,
+                body: content
+            }
+        };
+        return sendMessage(tokens, payload);
+    });
