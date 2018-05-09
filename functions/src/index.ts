@@ -9,6 +9,12 @@ admin.initializeApp({
     credential: admin.credential.cert(options),
     databaseURL: 'https://ge-chat-fd58e.firebaseio.com'
 });
+// // Start writing Firebase Functions
+// // https://firebase.google.com/docs/functions/typescript
+//
+// export const helloWorld = functions.https.onRequest((request, response) => {
+//  response.send("Hello from Firebase!");
+// });
 export const inviteToConversation = functions.database
     .ref(`conversation/{key}/members/{index}`)
     .onCreate((snapshot, context) => {
