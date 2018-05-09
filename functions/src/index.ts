@@ -147,51 +147,49 @@ const sendMessage = (tokens, payload) => {
 };
 // TEST
 // sendFCM('foo', {params: {conversationId: '-LBOF7ydAkKSI-BLGG6w'}})
-export const sendFCM = functions.database
-    .ref(`history/{conversationId}`)
-    .onCreate(async (snapshot, context) => {
-        const conversationId = context.params.conversationId;
-        const messageId = context.params.messageId;
-        let { content, from } = snapshot.val();
-        let { name } = from;
+export const sendFCM = functions.database.ref(`history/{conversationId}`).onCreate(async (snapshot, context) => {
+    const conversationId = context.params.conversationId;
+    const messageId = context.params.messageId;
+    let { content, from } = snapshot.val();
+    let { name } = from;
 
-        // console.log('CONVERSATION ID', conversationId);
+    // console.log('CONVERSATION ID', conversationId);
 
-        // Get conversation member ids.
-        let memberIds = await admin
-            .database()
-            .ref(`/conversation/${conversationId}/members`)
-            .once('value');
-        // console.log('MEMBERS', _.keys(memberIds.val()));
+    // Get conversation member ids.
+    let memberIds = await admin
+        .database()
+        .ref(`/conversation/${conversationId}/members`)
+        .once('value');
+    // console.log('MEMBERS', _.keys(memberIds.val()));
 
-        //deviceInfo objects
-        let infos = await Promise.all(
-            _.chain(memberIds.val())
-                .keys()
-                .flatten()
-                .map(async memberId => {
-                    let snapshot = await admin
-                        .database()
-                        .ref(`deviceInfo/${memberId}`)
-                        .once('value');
+    //deviceInfo objects
+    let infos = await Promise.all(
+        _.chain(memberIds.val())
+            .keys()
+            .flatten()
+            .map(async memberId => {
+                let snapshot = await admin
+                    .database()
+                    .ref(`deviceInfo/${memberId}`)
+                    .once('value');
 
-                    return snapshot.val();
-                })
-                .value()
-        );
-
-        //get all device tokens
-        let tokens = infos
-            .map(info => {
-                return _.property('deviceId')(info);
+                return snapshot.val();
             })
-            .filter(info => info);
+            .value()
+    );
 
-        const payload = {
-            notification: {
-                title: name,
-                body: content
-            }
-        };
-        return sendMessage(tokens, payload);
-    });
+    //get all device tokens
+    let tokens = infos
+        .map(info => {
+            return _.property('deviceId')(info);
+        })
+        .filter(info => info);
+
+    const payload = {
+        notification: {
+            title: name,
+            body: content
+        }
+    };
+    return sendMessage(tokens, payload);
+});
