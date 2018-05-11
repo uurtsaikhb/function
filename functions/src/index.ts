@@ -1,16 +1,10 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as _ from 'lodash';
+import * as qrcode from 'qrcode';
 import { create } from 'domain';
 
-// admin.initializeApp();
 admin.initializeApp();
-// // Start writing Firebase Functions
-// // https://firebase.google.com/docs/functions/typescript
-//
-// export const helloWorld = functions.https.onRequest((request, response) => {
-//  response.send("Hello from Firebase!");
-// });
 export const inviteToConversation = functions.database
     .ref(`conversation/{key}/members/{index}`)
     .onCreate((snapshot, context) => {
@@ -27,7 +21,7 @@ export const inviteToConversation = functions.database
     });
 
 export const signUp = functions.auth.user().onCreate(async (user, context) => {
-    return await admin
+    await admin
         .firestore()
         .collection('users')
         .doc(user.uid)
@@ -37,6 +31,13 @@ export const signUp = functions.auth.user().onCreate(async (user, context) => {
             displayName: user.displayName,
             photoURL: user.photoURL
         });
+    let stream = admin
+        .storage()
+        .bucket()
+        .file(`user/${user.uid}/images/qrcode.png`)
+        .createWriteStream();
+
+    return await qrcode.toFileStream(stream, user.uid).then(d => console.log(d));
 });
 const normalizePhoneNumber = phoneNumber => {
     let fixed = (phoneNumber || '').replace(/[-\(\)\s]/g, '');
@@ -119,16 +120,24 @@ export const friendRequestAccepted = functions.database
     .onCreate(async (snapshot, context) => {
         let key = _.property('params.key')(context);
         let myUID: any = _.property('params.uid')(context);
-        if (!snapshot.val()) {
-            return -1;
-        }
         let dataSnapShot = await admin
             .database()
             .ref(`user/${myUID}/notification/${key}`)
             .once('value');
         let friendUID: any = _.property('from.uid')(dataSnapShot.val());
+        let requestKey: any = _.property('key')(dataSnapShot.val());
+        let requestRef = admin.database().ref(`user/${friendUID}/friend/requests/${requestKey}`);
+        if (!snapshot.val()) {
+            await requestRef.update({
+                accepted: false
+            });
+            return -1;
+        }
 
-        console.log(myUID, friendUID, `user/${myUID}/notification/${key}`);
+        await requestRef.update({
+            accepted: true
+        });
+
         if (!friendUID) {
             return false;
         }
